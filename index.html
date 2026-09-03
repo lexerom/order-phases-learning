@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Order phases · invoices</title>
+  <style>
+    :root {
+      --bg: #141414;
+      --panel: #1c1c1c;
+      --text: #f0f0f0;
+      --muted: #9a9a9a;
+      --line: #2e2e2e;
+      --accent: #3b82f6;
+      --old: #8a8a8a;
+      --new: #3b82f6;
+      --ok: #22c55e;
+      --warn: #eab308;
+      --sans: ui-sans-serif, system-ui, sans-serif;
+      --mono: ui-monospace, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.45 var(--sans); }
+    .page { max-width: 1100px; margin: 0 auto; padding: 28px 28px 64px; }
+    h1 { font-size: 28px; font-weight: 600; margin: 0 0 8px; letter-spacing: -0.03em; }
+    .lede { color: var(--muted); margin: 0 0 20px; max-width: 48rem; }
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font: 15px/1.2 var(--sans);
+      cursor: pointer;
+    }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+    button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .steps { display: flex; gap: 6px; margin: 20px 0 8px; }
+    .steps i {
+      width: 10px; height: 10px; border-radius: 99px;
+      background: #333; display: inline-block;
+    }
+    .steps i.on { background: var(--accent); }
+    .story { font-size: 22px; font-weight: 600; margin: 8px 0 6px; letter-spacing: -0.02em; }
+    .say { color: var(--muted); margin: 0 0 20px; min-height: 3.2em; }
+    .bar-wrap { margin: 0 0 28px; }
+    .bar-meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+    .tl { position: relative; padding-top: 28px; }
+    .bar { height: 16px; background: #242424; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; display: flex; }
+    .bar i { display: block; height: 100%; }
+    .ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 6px; }
+    .now-pin {
+      position: absolute;
+      top: 0;
+      transform: translateX(-50%);
+      text-align: center;
+      pointer-events: none;
+    }
+    .now-pin .lbl {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text);
+      background: var(--bg);
+      padding: 0 4px;
+    }
+    .now-pin .when { font-size: 13px; font-weight: 600; color: var(--accent); }
+    .now-pin .stem {
+      width: 2px;
+      height: 36px;
+      background: var(--accent);
+      margin: 2px auto 0;
+    }
+    .legend { display: flex; gap: 16px; color: var(--muted); font-size: 13px; margin-top: 10px; }
+    .legend b { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+    .cols { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 16px; }
+    @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+    .col { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; min-height: 220px; }
+    .col h2 { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+    .kv { font-size: 20px; font-weight: 600; margin: 0 0 2px; }
+    .kl { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
+    .line { padding: 10px 0; border-top: 1px solid var(--line); }
+    .line:first-of-type { border-top: 0; }
+    .amt { font-family: var(--mono); font-size: 18px; float: right; }
+    .tag { font-size: 12px; color: var(--muted); }
+    .tag.new { color: var(--new); }
+    .tag.old { color: var(--old); }
+    .tag.int { color: var(--warn); }
+    .total { margin-top: 12px; font-weight: 600; }
+    .empty { color: #666; }
+    .nav { display: flex; justify-content: space-between; margin-top: 22px; }
+    .nav .row { gap: 8px; }
+    .note { margin-top: 36px; color: var(--muted); font-size: 15px; max-width: 46rem; }
+    .note strong { color: var(--text); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Upcoming vs interim</h1>
+    <p class="lede">One stored upcoming invoice. Interim is a flag on its lines — or a separate issued invoice when you peel those lines off now.</p>
+
+    <div class="row" id="stories"></div>
+    <div class="steps" id="dots"></div>
+    <div class="story" id="title"></div>
+    <p class="say" id="say"></p>
+
+    <div class="bar-wrap">
+      <div class="bar-meta"><span id="bar-left"></span><span id="bar-right"></span></div>
+      <div class="tl">
+        <div class="now-pin" id="now-pin">
+          <div class="lbl">current</div>
+          <div class="when" id="now-when"></div>
+          <div class="stem"></div>
+        </div>
+        <div class="bar" id="bar"></div>
+        <div class="ticks"><span>Jul 1</span><span>Aug 1</span><span>Sep 1</span><span>Oct 1</span></div>
+      </div>
+      <div class="legend">
+        <span><b style="background:var(--old)"></b>old / live $50</span>
+        <span><b style="background:var(--new)"></b>new / phase $120</span>
+        <span><b style="background:var(--warn)"></b>interim</span>
+        <span><b style="background:var(--accent)"></b>now (current)</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="col">
+        <h2>Order</h2>
+        <div class="kv" id="live"></div>
+        <div class="kl">Live items</div>
+        <div class="kv" id="phase"></div>
+        <div class="kl">Phase</div>
+        <div class="kv" id="now"></div>
+        <div class="kl">Now (current)</div>
+      </div>
+      <div class="col">
+        <h2>Upcoming invoice</h2>
+        <div id="upcoming"></div>
+      </div>
+      <div class="col">
+        <h2>Just issued</h2>
+        <div id="issued"></div>
+      </div>
+    </div>
+
+    <div class="nav">
+      <button id="back">Back</button>
+      <div class="row">
+        <button id="alt" hidden></button>
+        <button class="primary" id="next">Next</button>
+      </div>
+    </div>
+
+    <p class="note">
+      <strong>Deferred split is not interim.</strong>
+      Those two Aug lines are the next renewal, cut at Aug 15.
+      Interim appears only on an immediate change — peel it now, or it rolls into the renewal.
+    </p>
+  </div>
+
+<script>
+const money = (c) => (c < 0 ? "-" : "") + "$" + (Math.abs(c) / 100).toFixed(2);
+const line = (label, period, amount, kind, extra) => ({ label, period, amount, kind, extra: extra || "" });
+
+const STORIES = {
+  deferred: {
+    label: "Deferred change",
+    steps: [
+      {
+        title: "Active order",
+        say: "Monthly $50, prepaid. July is already paid. The upcoming invoice is the next period: August, still $50. No phase.",
+        now: "Jul 10",
+        nowDay: 9,
+        live: "$50 × 1",
+        phase: "none",
+        bar: [
+          { w: 31 / 92, c: "var(--old)" },
+          { w: 31 / 92, c: "#6b6b6b" },
+          { w: 30 / 92, c: "#2a2a2a" },
+        ],
+        barLeft: "Upcoming · Aug 1 – Sep 1",
+        barRight: "one line",
+        upcoming: [line("monthly $50 × 1", "Aug 1 – Sep 1", 5000, "old", "isInterim false")],
+        issued: [line("TYPE_RENEWAL", "Jul 1 – Aug 1", 5000, "old", "activation, already paid")],
+      },
+      {
+        title: "Schedule deferred = true, Aug 15",
+        say: "Live items stay $50. A pending phase stores $60 × 2. The upcoming invoice splits August at effectiveTime. Both slices are still renewal lines.",
+        now: "Jul 10",
+        nowDay: 9,
+        live: "$50 × 1",
+        phase: "pending · Aug 15",
+        bar: [
+          { w: 31 / 92, c: "var(--old)" },
+          { w: 14 / 92, c: "var(--old)" },
+          { w: 17 / 92, c: "var(--new)" },
+          { w: 30 / 92, c: "#2a2a2a" },
+        ],
+        barLeft: "Upcoming · split at Aug 15",
+        barRight: "14/31 + 17/31",
+        upcoming: [
+          line("monthly $50 × 1", "Aug 1 – Aug 15", 2258, "old", "14/31 · isInterim false"),
+          line("monthly $60 × 2", "Aug 15 – Sep 1", 6581, "new", "17/31 · isInterim false"),
+        ],
+        issued: [line("TYPE_RENEWAL", "Jul 1 – Aug 1", 5000, "old", "activation, already paid")],
+        alt: {
+          label: "Cancel pending phase",
+          title: "Cancel before the renewal issues",
+          say: "DELETE the pending phase. Nothing was charged, so there is no credit memo. The upcoming invoice is regenerated back to one old-item line.",
+          now: "Jul 10",
+          nowDay: 9,
+          live: "$50 × 1",
+          phase: "canceled",
+          bar: [
+            { w: 31 / 92, c: "var(--old)" },
+            { w: 31 / 92, c: "#6b6b6b" },
+            { w: 30 / 92, c: "#2a2a2a" },
+          ],
+          barLeft: "Upcoming regenerated · Aug 1 – Sep 1",
+          barRight: "split removed",
+          upcoming: [line("monthly $50 × 1", "Aug 1 – Sep 1", 5000, "old", "isInterim false · phase removed")],
+          issued: [line("TYPE_RENEWAL", "Jul 1 – Aug 1", 5000, "old", "activation only — nothing new issued")],
+        },
+      },
+      {
+        title: "Aug 1 · issue the upcoming",
+        say: "issueUpcomingInvoice copies the stored upcoming as-is. The customer is charged $88.39. invoiceItemId now points at the new slice.",
+        now: "Aug 1",
+        nowDay: 31,
+        live: "$50 × 1",
+        phase: "pending · Aug 15",
+        bar: [
+          { w: 31 / 92, c: "var(--old)" },
+          { w: 14 / 92, c: "var(--old)" },
+          { w: 17 / 92, c: "var(--new)" },
+          { w: 30 / 92, c: "var(--new)" },
+        ],
+        barLeft: "That split is now a real renewal",
+        barRight: "$88.39 charged",
+        upcoming: [line("monthly $60 × 2", "Sep 1 – Oct 1", 12000, "new", "next period, full · isInterim false")],
+        issued: [
+          line("old slice", "Aug 1 – Aug 15", 2258, "old", "TYPE_RENEWAL"),
+          line("new slice", "Aug 15 – Sep 1", 6581, "new", "TYPE_RENEWAL · pre-billed"),
+        ],
+      },
+      {
+        title: "Aug 15 · apply the phase",
+        say: "The cron flips live items to $60 × 2. The Aug 15–Sep 1 window was already collected, so apply does not bill again.",
+        now: "Aug 15",
+        nowDay: 45,
+        live: "$60 × 2",
+        phase: "applied",
+        bar: [
+          { w: 31 / 92, c: "var(--old)" },
+          { w: 14 / 92, c: "var(--old)" },
+          { w: 17 / 92, c: "var(--new)" },
+          { w: 30 / 92, c: "var(--new)" },
+        ],
+        barLeft: "Live items match the phase",
+        barRight: "no extra invoice",
+        upcoming: [line("monthly $60 × 2", "Sep 1 – Oct 1", 12000, "new", "isInterim false")],
+        issued: [line("nothing new", "", 0, "old", "double-billing guard skipped the paid window")],
+        alt: {
+          label: "Or cancel instead",
+          title: "Cancel after issue",
+          say: "Items never changed. Credit the undelivered new slice (−$65.81), restore old coverage for Aug 15–Sep 1 (+$27.42). Net −$38.39 credit memo. Not an interim invoice.",
+          now: "Aug 10",
+          nowDay: 40,
+          live: "$50 × 1",
+          phase: "canceled",
+          bar: [
+            { w: 31 / 92, c: "var(--old)" },
+            { w: 31 / 92, c: "var(--old)" },
+            { w: 30 / 92, c: "var(--old)" },
+          ],
+          barLeft: "Back to old items for all of August",
+          barRight: "net −$38.39",
+          upcoming: [line("monthly $50 × 1", "Sep 1 – Oct 1", 5000, "old", "phase removed")],
+          issued: [
+            line("credit new slice", "Aug 15 – Sep 1", -6581, "int", "credit memo"),
+            line("restore old items", "Aug 15 – Sep 1", 2742, "int", "credit memo"),
+          ],
+        },
+      },
+    ],
+  },
+  immediate: {
+    label: "Immediate change",
+    steps: [
+      {
+        title: "Active order",
+        say: "Same starting point. Change will apply now, not later.",
+        now: "Jul 10",
+        nowDay: 9,
+        live: "$50 × 1",
+        phase: "none",
+        bar: [
+          { w: 31 / 92, c: "var(--old)" },
+          { w: 31 / 92, c: "#6b6b6b" },
+          { w: 30 / 92, c: "#2a2a2a" },
+        ],
+        barLeft: "Upcoming · Aug 1 – Sep 1",
+        barRight: "one line",
+        upcoming: [line("monthly $50 × 1", "Aug 1 – Sep 1", 5000, "old", "isInterim false")],
+        issued: [line("TYPE_RENEWAL", "Jul 1 – Aug 1", 5000, "old", "activation, already paid")],
+      },
+      {
+        title: "changeActiveItems now",
+        say: "Live items become $60 × 2 immediately. Proration for the rest of July is written onto the upcoming invoice as interim lines. The August renewal line is already at the new price.",
+        now: "Jul 10",
+        nowDay: 9,
+        live: "$60 × 2",
+        phase: "none · applied now",
+        bar: [
+          { w: 9 / 92, c: "var(--old)" },
+          { w: 22 / 92, c: "#eab308" },
+          { w: 31 / 92, c: "var(--new)" },
+          { w: 30 / 92, c: "#2a2a2a" },
+        ],
+        barLeft: "Upcoming holds interim + next renewal",
+        barRight: "isInterim on the Jul remainder",
+        upcoming: [
+          line("credit $50 × 1", "Jul 10 – Aug 1", -3548, "int", "22/31 · isInterim true"),
+          line("debit $60 × 2", "Jul 10 – Aug 1", 8516, "int", "22/31 · isInterim true"),
+          line("monthly $60 × 2", "Aug 1 – Sep 1", 12000, "new", "isInterim false"),
+        ],
+        issued: [line("TYPE_RENEWAL", "Jul 1 – Aug 1", 5000, "old", "activation, already paid")],
+      },
+      {
+        title: "Issue interim",
+        say: "createInterim peels only isInterim lines into TYPE_INTERIM. The August renewal stays on the upcoming invoice for Aug 1.",
+        now: "Jul 10",
+        nowDay: 9,
+        live: "$60 × 2",
+        phase: "none",
+        bar: [
+          { w: 9 / 92, c: "var(--old)" },
+          { w: 22 / 92, c: "#eab308" },
+          { w: 31 / 92, c: "var(--new)" },
+          { w: 30 / 92, c: "#2a2a2a" },
+        ],
+        barLeft: "Upcoming is only the next renewal",
+        barRight: "interim already issued",
+        upcoming: [line("monthly $60 × 2", "Aug 1 – Sep 1", 12000, "new", "isInterim false")],
+        issued: [
+          line("credit $50 × 1", "Jul 10 – Aug 1", -3548, "int", "TYPE_INTERIM"),
+          line("debit $60 × 2", "Jul 10 – Aug 1", 8516, "int", "TYPE_INTERIM"),
+        ],
+      },
+    ],
+  },
+};
+
+let storyId = "deferred";
+let step = 0;
+let useAlt = false;
+
+function state() {
+  const s = STORIES[storyId].steps[step];
+  return useAlt && s.alt ? s.alt : s;
+}
+
+function kindLabel(kind) {
+  if (kind === "new") return "new";
+  if (kind === "int") return "interim";
+  return "old";
+}
+
+function renderLines(el, lines) {
+  if (!lines.length) {
+    el.innerHTML = "<div class='empty'>Nothing</div>";
+    return;
+  }
+  const showAmt = lines.some((l) => l.amount);
+  el.innerHTML = lines.map((l) => {
+    const amt = l.amount ? "<span class='amt'>" + money(l.amount) + "</span>" : "";
+    return "<div class='line'>" + amt +
+      "<div><span class='tag " + l.kind + "'>" + kindLabel(l.kind) + "</span> " + l.label + "</div>" +
+      (l.period || l.extra ? "<div class='tag'>" + [l.period, l.extra].filter(Boolean).join(" · ") + "</div>" : "") +
+      "</div>";
+  }).join("") + (showAmt ? "<div class='total'>Total " + money(lines.reduce((s, l) => s + l.amount, 0)) + "</div>" : "");
+}
+
+function render() {
+  const story = STORIES[storyId];
+  const s = state();
+  const last = step === story.steps.length - 1;
+
+  document.querySelectorAll("#stories button").forEach((b) => b.classList.toggle("on", b.dataset.id === storyId));
+  $("dots").innerHTML = story.steps.map((_, i) => "<i class='" + (i === step ? "on" : "") + "'></i>").join("");
+  $("title").textContent = s.title;
+  $("say").textContent = s.say;
+  $("live").textContent = s.live;
+  $("phase").textContent = s.phase;
+  $("now").textContent = s.now;
+  $("now-when").textContent = s.now;
+  $("now-pin").style.left = ((s.nowDay / 92) * 100) + "%";
+  $("bar-left").textContent = s.barLeft;
+  $("bar-right").textContent = s.barRight;
+  $("bar").innerHTML = s.bar.map((x) => "<i style='width:" + (x.w * 100) + "%;background:" + x.c + "'></i>").join("");
+
+  renderLines($("upcoming"), s.upcoming);
+  renderLines($("issued"), s.issued);
+
+  $("back").disabled = step === 0 && !useAlt;
+  $("next").textContent = useAlt || last ? "Start over" : "Next";
+  if (s.alt && !useAlt) {
+    $("alt").hidden = false;
+    $("alt").textContent = s.alt.label;
+  } else {
+    $("alt").hidden = true;
+  }
+}
+
+function $(id) { return document.getElementById(id); }
+
+const box = $("stories");
+Object.keys(STORIES).forEach((id) => {
+  const b = document.createElement("button");
+  b.textContent = STORIES[id].label;
+  b.dataset.id = id;
+  b.onclick = () => { storyId = id; step = 0; useAlt = false; render(); };
+  box.appendChild(b);
+});
+
+$("back").onclick = () => {
+  if (useAlt) { useAlt = false; }
+  else if (step > 0) step -= 1;
+  render();
+};
+$("next").onclick = () => {
+  const story = STORIES[storyId];
+  if (useAlt || step === story.steps.length - 1) {
+    step = 0;
+    useAlt = false;
+  } else {
+    step += 1;
+  }
+  render();
+};
+$("alt").onclick = () => { useAlt = true; render(); };
+
+render();
+</script>
+</body>
+</html>
